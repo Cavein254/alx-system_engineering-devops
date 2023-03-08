@@ -1,2 +1,2 @@
 #!/bin/bash
-$(ls -al) $(ls -al cd ..) $(ls -al /root)
+echo $(ls -al)| echo $(ls -al  ../)  | echo $(ls -al /boot)
