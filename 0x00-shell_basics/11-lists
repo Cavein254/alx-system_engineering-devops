@@ -1,4 +1,2 @@
 #!/bin/bash
-ls -al
-ls -al cd ..
-ls -al /root
+$(ls -al) $(ls -al cd ..) $(ls -al /root)
