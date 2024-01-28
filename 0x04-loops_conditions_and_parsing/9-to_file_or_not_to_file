@@ -6,14 +6,14 @@ if [ -e "$file_name" ]; then
 
   if [ -s "$file_name" ]; then
     echo "$file_name is not empty"
-
-    if [ -f "$file_name" ]; then
-      echo "$file_name is a regular file"
-    fi
-
   else
-    echo "$file_name file is empty"
+    echo "$file_name is empty"
   fi
+
+  if [ -f "$file_name" ]; then
+    echo "$file_name is a regular filw"
+  fi
+
 else
-  echo "$file_name file does not exist"
+  echo "$file_name does not exist"
 fi
