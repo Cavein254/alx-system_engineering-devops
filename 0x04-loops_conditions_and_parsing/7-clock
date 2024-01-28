@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Clock system
 hour=0
-while [ $hour -le 23 ]; do
+while [ $hour -le 12 ]; do
 	minutes=1
 	echo "Hour:" $hour
 	while [ $minutes -le 59 ]; do
