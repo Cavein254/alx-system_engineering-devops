@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
 # Bash script that uses ssh to connect to a server
-# private key ~/.ssh/school; user ubuntu; host IP given as 54.144.136.137
+# private key ~/.ssh/school; user ubuntu; host IP given as 3.85.148.240
 
-ssh -i ~/.ssh/school ubuntu@54.144.136.137
+ssh -i ~/.ssh/school ubuntu@3.85.148.240
