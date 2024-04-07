@@ -8,8 +8,8 @@ frontend http_front
     
 backend web-servers
     balance roundrobin
-    server 326512-web-01 54.82.178.217:80
-    server 326512-web-02 54.160.126.63:80
+    server 326512-web-01 3.85.148.240:80
+    server 326512-web-02 100.26.239.31:80
 "
 add-apt-repository ppa:vbernat/haproxy-2.0
 apt update
