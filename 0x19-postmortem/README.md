@@ -1,25 +1,22 @@
-# 0x19. Postmortem
+**Title: GraphQL Server Incident Report**
+An incident involving one of our GraphQL servers on Sept 10th, 2023, resulted in service disruption to our clients. This post-mortem analysis will provide details regarding the incident, its causes, and mitigations to similar future problems.
+**Issue Summary**
+At approximately 0614 hrs(EAT), one of our graphic servers experienced an outage, resulting in service disruption for 3 hours. On investigation, it was discovered that the server was not processing incoming requests as it had been crushed. 100 percent of the users were affected by this incident. The root cause was a recent upgrade of the Apollo Server that is responsible for processing GraphQL queries.
+**Timeline (all Eastern African Time)**
+- 0545 hrs: Server maintenance rolled out involving upgrading of packages specifically Apollo Server 3 to Apollo Server 4 
+- 0555 hrs: The outage begins
+- 0623 hrs: Log servers send alerts through SMSes
+- 0645 hrs: Rollback process initiated
+- 0712 hrs: Problem solved and the server restarted
+- 0743 hrs: 100% of traffic flowing with no incidents
+**Root cause and resolution**
+At 0545 hrs our deployment team uploaded a new version of the website with package upgrades. Immediately, resolvers fail as the recent version of Apollo Server 4 has major changes in the way it handles queries and mutation. At 0623 hrs log servers send alerts as the servers are full due to logging gibberish errors. 
+At 0625 hrs, one of our engineers responded to the problem by isolating the affected server and completely shutting it down. Rolling-back changes begin at 0635 hrs and last for 7 mins. The rollback ends at 0642 hrs and the server is brought back online. The log servers are cleared of the gibberish data and the persistence of useful logs starts. 0645 hrs everything is working as intended.
+Corrective and preventative measures
+In the next two days, the team sat down to conduct a thorough analysis investigating what had happened and find ways to prevent future occurrences. The following preventive measures were suggested:
+- Implement stricter code review measures to catch errors before they are pushed to deployment.
+- Write and implement better testing mechanisms
+- Conduct a proper audit of the installation package, especially outlining breaking changes before the upgrade
+- Improve the current rollback feature to enable quicker rollback in case of similar incidents occurring in the future.
 
-## Issue Summary:
-Start time: **Oct 22rd 2022 9:00 AM** (EAT), End time: **Oct 22rd 2022 10:00 AM** (EAT).
-The wordpress page was returning a 500 status code, so the page was down for a 100% of the users.
-Root cause: typo in a wordpress settings document.
-## Timeline:
-* 9:05 AM - The issue was detected by several users, who contacted the customer service department.
-* 9:10 AM - The issue was escalated to the System Engineering team, and the SRE.
-* 9:15 AM - They looked at the running processes on the server using ‘ps auxf’ to see if any unwanted child process was running in the background, and keeping the server from responding.
-* 9:20 AM - After seeing the processes looked fine, the team used ‘strace’ on some process ids including the ones of apache2 (the web server hosting the wordpress page).
-* 9:30 AM - strace on one of the apache2 processes was showing an infinite loop of system calls, so they looked at the second apache2 process, that was calling the system call accept4() and hanging.
-* 9:35 AM - When using curl on the page’s IP while running strace on that second apache2 process, the team realized strace was displaying a lot of errors. One of them said that the file index.html didn’t exist, but it was a misleading clue because adding that file sin the wordpress folders didn’t seem to make it work.
-* 9:40 AM - After reading carefully all the errors returned by strace, the team saw that one of them mentioned that a file didn’t exist: the file that apache2 was trying to access seemed to be terminating in ‘.phpp’, which is not a common extension for a file.
-* 9:45 AM - When looking at the wordpress settings file, /var/www/html/wp-settings.php, line 137 was trying to require that faulty file. From then, the team just removed the extra ‘p’ at the end of the extension.
-* 9:50 AM - The team only had to restart apache2 using ‘service apache2 restart’. The page was back up like normal.
-## Root cause and resolution:
-One typo in the wordpress settings file was found, causing apache2 to not work properly.
-The issue was saved by removing that typo and restarting apache2.
-Corrective and preventative measures:
-Setting files should not have write permissions for anyone else than the SRE, in order to avoid injection of small typos like the one that was experienced in this incident.
-# TODO: 
-Change permissions on /var/www/html/wp-settings.php to read-only for the team.
-Read carefully all setting files to look for other typos of that type.
 
