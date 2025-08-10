@@ -1,0 +1,181 @@
+Scale Up — README
+Goal
+
+Split web, application, and database components onto their own servers and add a second HAProxy load-balancer in a cluster for high availability.
+New topology (servers total: 4)
+
+User Browser
+    |
+  Internet (HTTPS)
+    |
+ DNS: www.foobar.com → Virtual IP (VIP) or two LB IPs
+    |
+ ┌─────────────────────────────┐
+ │ HAProxy Cluster (2 nodes)   │
+ │ - HAProxy A  <-->  HAProxy B│
+ │ - Keepalived/VRRP provides  │
+ │   a Virtual IP (VIP)        │
+ └─────────────────────────────┘
+            |
+            | (VIP → forwards)
+            v
+       ┌──────────┐
+       │ Web Srv  │  (Server 1)
+       │  Nginx   │
+       └──────────┘
+            |
+            | reverse proxy / upstream
+            v
+       ┌──────────┐
+       │ App Srv  │  (Server 2)
+       │  Gunicorn / Node / PHP-FPM │
+       └──────────┘
+            |
+            v
+       ┌──────────┐
+       │ DB Srv   │  (Server 3)
+       │  MySQL   │
+       └──────────┘
+
+(Plus: the additional server you asked to add is used for scaling — see options below)
+
+    Note: The requirement asked to “add 1 server” — the common pattern is to add an extra stateless web server so you now have multiple web servers behind the HAProxy cluster, or to add a dedicated monitoring/backup/redis server. Below I describe the recommended choice and the alternatives.
+
+What changed vs previous (why we added elements)
+1. Added one server (Server 4)
+
+Why: to increase capacity and redundancy without co-locating roles.
+
+    Recommended use: additional web server (another Nginx) so there are at least two web servers behind the HAProxy layer. This keeps the app tier isolated and allows rolling deploys of the web tier with zero-downtime.
+
+    Alternative uses: dedicated cache (Redis), monitoring/metrics collector, or separate session store — pick based on bottlenecks.
+
+2. HAProxy cluster (2 nodes)
+
+Why: a single load-balancer is a SPOF. Two HAProxy nodes with a small clustering mechanism provide high availability for the entry point.
+
+    Typical setup: HAProxy + Keepalived (VRRP). Keepalived provides a single Virtual IP (VIP). One HAProxy is active (owns VIP); on failure, the other takes over automatically (fast failover).
+
+    This is an Active-Passive cluster by default (VIP on leader). Optionally you can run Active-Active with floating IPs or DNS-based load distribution, but Active-Passive via VRRP is simplest and robust.
+
+3. Separated Web Server (Nginx)
+
+Why: serve static assets, cache, TLS termination (if you choose), and do edge tasks (gzip, HTTP/2, redirect, static caching). Separating web from app:
+
+    reduces resource contention,
+
+    allows scaling web tier independently,
+
+    simplifies TLS and CDN integration.
+
+4. Separated Application Server
+
+Why: runs business logic, handles DB queries, local caches, and long-running tasks. Isolating it:
+
+    allows tailored runtime (different memory/CPU),
+
+    independent deployments,
+
+    easier horizontal scaling of stateless app servers.
+
+5. Dedicated Database Server (MySQL)
+
+Why: databases are I/O and memory intensive; they need isolation for performance and durability. Keep backups and automated failover strategies in mind.
+Application server vs Web server — short, clear distinction
+
+    Web server (e.g., Nginx)
+
+        Primary role: handle HTTP protocol, serve static files (CSS/JS/images), act as reverse proxy, handle TLS termination, caching, connection management, request buffering, and basic rate limits.
+
+        Lightweight, optimized for many concurrent connections and static content.
+
+    Application server (e.g., Gunicorn, uWSGI, Node.js process, PHP-FPM)
+
+        Primary role: run your application code — execute business logic, interact with databases and caches, render templates or produce JSON for APIs.
+
+        Handles CPU and memory intensive application tasks and often maintains worker processes or event loop.
+
+Why separate them?
+
+    Different resource patterns (web: I/O/network; app: CPU/memory).
+
+    Different deployment and scaling strategies.
+
+    Security: fewer privileges for web server; app server can be in private subnet.
+
+HAProxy cluster: distribution & behavior
+
+    Keepalived + VRRP → provides a Virtual IP (VIP) that clients/DNS point to.
+
+        Active-Passive: HAProxy-A holds the VIP and accepts traffic; HAProxy-B monitors HAProxy-A and takes over VIP if the primary fails. Very fast failover (seconds) and simple to implement.
+
+    Load balancing algorithm (HAProxy) (on active node) → pick one: roundrobin, leastconn, or source:
+
+        roundrobin — evenly rotate requests.
+
+        leastconn — send new requests to the server with fewest active connections (better for variable request times).
+
+        source — hashing by client IP (session affinity).
+
+    Sticky sessions: if your app stores session in-memory, set cookie or source or use external session store (Redis) to avoid sticky sessions.
+
+Data flow example (HTTPS termination choices)
+
+    Option A — TLS at HAProxy (terminate at LB)
+
+        LB decrypts, forwards plaintext to web servers on private network.
+
+        Benefit: offloads TLS work.
+
+        Drawback: internal traffic plaintext (mitigate via private network + host firewalls or re-encrypt to backends).
+
+    Option B — TLS passthrough (LB forwards TCP)
+
+        LB forwards encrypted traffic directly to Nginx, which terminates TLS.
+
+        Benefit: end-to-end TLS; web servers can use distinct certs.
+
+        Drawback: LB cannot inspect HTTP for routing decisions (less flexible).
+
+Either is valid depending on security posture.
+Why splitting components onto dedicated servers is good
+
+    Isolation: DB heavy I/O won’t starve app or web processes.
+
+    Independent scaling: add more web nodes or app nodes without touching DB server.
+
+    Security: DB can live in private subnet, accessible only from app servers.
+
+    Operational clarity: tuning and backups are easier when servers have single responsibilities.
+
+Considerations & operational notes
+
+    SPOF remaining: database single primary is still a SPOF for writes — consider replicas and automatic failover tools (MySQL Group Replication, Galera, Orchestrator).
+
+    Session management: to scale app servers, store session state in Redis or use signed cookies.
+
+    Configuration management & deployments: use CI/CD to deploy safely; with blue/green or rolling deploys to keep availability.
+
+    Monitoring & logging: run agents on all servers and monitor LB health, web QPS, app latencies, DB replication lag, disk health.
+
+    Backups: scheduled DB backups and tested restore process.
+
+    Security: host firewalls, VPC/private subnets, TLS, key management, and least-privilege SSH access.
+
+Quick checklist (actionable)
+
+Add Server 4 as a second web server (or Redis/monitoring as needed).
+
+Deploy HAProxy on two nodes + Keepalived for VIP failover (Active-Passive).
+
+Configure HAProxy to use leastconn for variable request latency, or roundrobin for even distribution.
+
+Run Nginx on web servers; have Nginx proxy to app servers on internal ports.
+
+Run app servers in private subnet(s); scale horizontally as needed.
+
+Move MySQL to its own host; create read replicas and automated failover plan.
+
+Use external session store (Redis) or stateless JWT/cookie sessions.
+
+Instrument monitoring (metrics + logs) for each tier.

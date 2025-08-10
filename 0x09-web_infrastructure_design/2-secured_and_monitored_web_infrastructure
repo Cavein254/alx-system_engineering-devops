@@ -1,0 +1,218 @@
+Secured & Monitored Web Infrastructure — 3 Servers
+
+1. High-level ASCII diagram (whiteboard)
+
+User Browser
+|
+Internet (HTTPS)
+|
+[DNS: www.foobar.com → Load Balancer IP]
+|
+Load Balancer (HAProxy or managed LB) <-- SSL cert for www.foobar.com (TLS termination)
+|
+┌───────────────┬───────────────┬───────────────┐
+│ │ │ │
+│ Server A │ Server B │ Server C │
+│ (App + Nginx)│ (App + Nginx)│ (MySQL DB) │
+│ FW (iptables)│ FW (iptables)│ FW (iptables)│
+│ Monitoring │ Monitoring │ Monitoring │
+│ Agent/Collector Agent/Collector Agent/Collector
+└───────────────┴───────────────┴───────────────┘
+|
+MySQL (Primary on Server C; Replicas optional)
+
+    Notes:
+
+        3 firewalls = one host firewall on each server (Server A, B, C).
+
+        1 SSL certificate installed so www.foobar.com is served over HTTPS.
+
+        3 monitoring clients = one monitoring/log/metrics agent on each server (SumoLogic, Datadog agent, or Prometheus node_exporter + filebeat).
+
+2.  Components added (and why each one is present)
+
+    Host Firewalls (3 total — one per server)
+
+         Purpose: limit network exposure by allowing only necessary ports and sources (e.g., allow 443/80 from load balancer, allow DB port only from app servers).
+
+         Why added: reduces attack surface and prevents lateral movement if one host is compromised.
+
+    SSL Certificate for www.foobar.com
+
+         Purpose: enable HTTPS so traffic between user browsers and our infrastructure is encrypted and authenticated.
+
+         Why added: protects user data in transit and prevents MITM attacks; required for security best practices and modern browsers.
+
+    Monitoring Clients (3 total — data collectors / agents)
+
+         Purpose: collect logs, metrics and traces from each server and forward them to a monitoring/observability backend (SumoLogic, Datadog, Prometheus+Grafana, etc.).
+
+         Why added: enable alerting, performance visibility, SLA measurement, and post-mortem analysis.
+
+    Load Balancer
+
+         Purpose: distribute incoming HTTPS requests to app/web servers; can offload TLS if configured to do so.
+
+         Why added: availability and scaling across app servers.
+
+    Nginx (on app servers)
+
+         Purpose: serve static files, act as reverse proxy to the application process, and expose metrics endpoints (e.g., stub_status) for QPS monitoring.
+
+    Application Server (on app servers)
+
+         Purpose: execute business logic, handle DB queries, sessions, API endpoints.
+
+    MySQL (on dedicated server C)
+
+         Purpose: persistent storage for application data. Typically configured as Primary (writes) ± Replica(s) for reads/backup.
+
+3.  What firewalls are for (practical rules)
+
+    Host firewall role examples:
+
+         Server A/B (app servers): allow inbound 443 from load balancer IP(s), allow SSH from admin IPs only, allow outbound to DB port on Server C.
+
+         Server C (DB server): allow inbound MySQL port only from Server A/B and LB if necessary, block all other inbound.
+
+    Firewalls prevent unauthorized access and contain breaches.
+
+4.  Why serve traffic over HTTPS
+
+    Encrypts data in transit (confidentiality).
+
+    Verifies server identity (prevents impersonation).
+
+    Required for modern browser features (cookies Secure, HTTP/2, service workers).
+
+    Prevents eavesdropping or tampering between user and server.
+
+5.  What monitoring is used for (high-level)
+
+    Logs: web access logs, application logs, database logs — for debugging, security auditing, and forensics.
+
+    Metrics: CPU, memory, disk, network, request latency, requests-per-second (QPS), DB query latency, connection counts.
+
+    Traces (optional): distributed tracing to follow requests across services.
+
+    Alerts & Dashboards: detect failures, SLA breaches, and abnormal behavior.
+
+6.  How the monitoring tool collects data
+
+Common patterns:
+
+    Agent-based push: An agent on each host (SumoLogic collector, Datadog Agent, Filebeat) tails logs and pushes them over TLS to the SaaS collector. Metrics (node_exporter, Datadog metrics) either push or get scraped.
+
+    Pull-based scrape (Prometheus model): Prometheus server scrapes endpoints (/metrics) exposed by exporters on each host at a fixed interval.
+
+    Hybrid: logs via agent push; metrics via Prometheus scrape; traces via Jaeger/OTel collector.
+
+In our setup: 3 monitoring clients (one per server) run an agent/exporter that collects:
+
+    system metrics (CPU, mem)
+
+    app metrics (Nginx stub_status, application counters)
+
+    logs (access, error, app logs)
+    and sends them to the monitoring backend (SumoLogic/Datadog/Grafana Cloud) over TLS.
+
+7. How to monitor Web Server QPS (Requests Per Second)
+
+Practical steps:
+
+    Expose Nginx metrics
+
+        Enable stub_status (simple metrics) or use an Nginx Prometheus exporter to expose metrics like nginx_http_requests_total.
+
+    Collect metrics
+
+        If using Prometheus: configure Prometheus to scrape the exporter endpoint on each app server (e.g., http://serverA:9113/metrics).
+
+        If using Datadog/Sumo: install the agent with Nginx integration to collect request counters.
+
+    Compute QPS
+
+        In Prometheus, use a query like:
+
+        rate(nginx_http_requests_total[1m])
+
+        which returns requests/sec averaged over the last minute for each target.
+
+        Create a dashboard and set alerts if QPS exceeds thresholds or drops unexpectedly.
+
+    Alternative (logs)
+
+        Count lines in access logs over the past minute via the logging backend (e.g., count(request) by 1m) — slower but useful if metrics aren't available.
+
+8.  Issues with this infrastructure (and mitigations)
+    a) Terminating SSL at the load balancer is an issue
+
+        Why: if LB terminates TLS and forwards traffic to backend servers in plaintext (HTTP), internal network traffic between LB and backends is unencrypted — an attacker who gains network access (or a compromised host) could sniff or tamper with requests.
+
+        Mitigations:
+
+            Use end-to-end TLS: keep TLS to the backend (re-encrypt between LB and backends) or
+
+            Use mTLS between LB and backends so both sides authenticate each other, or
+
+            Ensure the internal network is private and isolated (VPC, private subnets) and use host firewalls + VPNs.
+
+b) Having only one MySQL server capable of accepting writes is an issue
+
+    Why: single-writer primary → single point of failure for writes. If Primary fails, writes stop until failover. Also can be a scalability bottleneck for heavy write workloads.
+
+    Mitigations:
+
+        Set up Primary + Replicas with automated failover (e.g., MHA, Orchestrator, Galera Cluster, MySQL Group Replication) so a replica can be promoted automatically.
+
+        Use managed DB services with multi-AZ failover.
+
+        Shard or partition writes when appropriate.
+
+c) Servers with all same components (DB, web, app on same hosts) might be a problem
+
+    Why problematic:
+
+        Resource contention — DB is I/O and memory-heavy; colocating DB with app processes can starve resources.
+
+        Harder to scale independently — you can’t scale app tier without also scaling DB (wasteful).
+
+        Security — broader attack surface: compromising app host gives access to DB located on same host.
+
+        Operational complexity — backups, tuning, and restarts for different roles conflict.
+
+    Mitigations:
+
+        Separation of concerns: dedicate servers for DB and for stateless app/web tiers.
+
+        Use stateless app servers behind LB (store sessions in Redis or cookie-based), share code via deployment pipeline.
+
+        Use autoscaling for app servers and separate scaling strategy for DB (read replicas, vertical scale, or managed solutions).
+
+9. Short checklist — Security & Monitoring best practices
+
+   Use HTTPS with a valid certificate (Let's Encrypt / CA) on LB and/or end-to-end TLS to backends.
+
+   Place public-facing components in a DMZ / public subnet; keep DB in private subnet.
+
+   Use host-based firewalls and a perimeter firewall / security groups.
+
+   Install monitoring agents on all servers (logs + metrics + traces).
+
+   Instrument Nginx and app code for QPS, latency, error-rate metrics.
+
+   Implement automated DB failover and backup strategies.
+
+   Add alerting (PagerDuty / Slack) for critical metrics (DB down, high error rate, low QPS).
+
+   Add regular security scans and log retention/archival policy.
+
+10. TL;DR summary
+
+    We use 3 servers: two app/web servers + one DB server.
+
+    Add 3 host firewalls and 3 monitoring agents (one per server) and 1 SSL cert to serve www.foobar.com over HTTPS.
+
+    Monitoring collects logs & metrics via local agents (push) or via scraping (Prometheus). QPS is measured with Nginx metrics (stub_status or Prometheus exporter) and rate() queries.
+
+    Watch out for: plaintext internal traffic when TLS is terminated only at the LB, single-writer DB as a write SPOF, and colocated roles causing contention and operational complexity.
