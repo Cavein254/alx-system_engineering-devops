@@ -1,0 +1,100 @@
+A single server with a LAMP stack
+Step-by-step explanation
+1. Scenario: User visits www.foobar.com
+
+A user opens a browser and types www.foobar.com:
+
+    DNS resolution:
+
+        The browser asks a DNS resolver for the IP address of www.foobar.com.
+
+        Since the www record is a DNS A record, it resolves to the IP 8.8.8.8.
+
+    Connection to the server:
+
+        The browser sends an HTTP/HTTPS request to the server at 8.8.8.8 over the internet.
+
+    Web server receives the request:
+
+        Nginx listens on port 80 (HTTP) or 443 (HTTPS).
+
+        It passes dynamic requests to the application server.
+
+    Application server runs the app:
+
+        The app server (e.g., Gunicorn, uWSGI, or PHP-FPM) executes your code base, handles logic, and queries the database if needed.
+
+    Database query:
+
+        The app server requests data from MySQL (e.g., product list, user profile).
+
+    Response:
+
+        The application server returns the generated HTML (or JSON) to Nginx, which sends it back to the user’s browser.
+
+Whiteboard Diagram
+
+User Browser
+     |
+   Internet
+     |
+ [DNS: www.foobar.com → 8.8.8.8 (A record)]
+     |
+ Server (IP: 8.8.8.8)
+ ┌────────────────────────────────────────┐
+ |       Nginx (Web Server)               |
+ |   - Handles HTTP/HTTPS requests        |
+ |   - Serves static files                 |
+ |   - Passes dynamic requests to app      |
+ |----------------------------------------|
+ | Application Server                     |
+ |   - Runs your code base                 |
+ |   - Processes requests                  |
+ |   - Interacts with DB                   |
+ |----------------------------------------|
+ | MySQL Database                          |
+ |   - Stores persistent data              |
+ └────────────────────────────────────────┘
+
+Key components & roles
+
+    Server:
+    A physical or virtual machine with an IP address that runs software (Nginx, app server, MySQL) to serve your website.
+
+    Domain name (foobar.com):
+    A human-readable address that maps to your server’s IP so users don’t have to remember 8.8.8.8.
+
+    DNS record:
+    The www in www.foobar.com is a subdomain, and here it’s set as an A record pointing to 8.8.8.8.
+
+    Web server (Nginx):
+    Accepts incoming HTTP requests, serves static files, and forwards dynamic ones to the application server.
+
+    Application server:
+    Executes the code base, processes logic, handles form submissions, and talks to the database.
+
+    Application files (code base):
+    The actual website code — could be PHP, Python, Node.js, etc.
+
+    Database (MySQL):
+    Stores data like user accounts, blog posts, products, etc., in a structured format.
+
+    Communication:
+    The server communicates with the user’s computer using HTTP or HTTPS over TCP/IP.
+
+Issues with this setup
+
+    Single Point of Failure (SPOF):
+
+        If this one server goes down, the entire website is offline.
+
+    Downtime during maintenance:
+
+        Deploying new code, upgrading software, or restarting Nginx means users can’t access the site during that time.
+
+    Scaling limitations:
+
+        One server can only handle a limited amount of traffic.
+
+        High load will slow down or crash the site, since there’s no load balancing or multiple servers.
+

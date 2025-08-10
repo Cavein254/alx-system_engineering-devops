@@ -1,0 +1,109 @@
+Distributed Web Infrastructure – Three Server Setup
+1. Scenario
+
+We are hosting www.foobar.com using three servers to improve scalability and availability compared to a single-server setup.
+2. Components & Why They’re Added
+
+    Load Balancer (HAProxy)
+
+        Distributes incoming traffic between multiple servers.
+
+        Improves availability — if one backend server fails, traffic is sent to the other.
+
+        Helps with scalability — multiple servers can handle more concurrent users.
+
+    Web Server (Nginx)
+
+        Handles incoming HTTP/HTTPS requests, serves static content, and forwards dynamic requests to the application server.
+
+    Application Server
+
+        Executes the application code base, processes logic, and interacts with the database.
+
+    Database (MySQL) with Primary–Replica setup
+
+        Improves read performance by splitting read and write queries.
+
+        Provides redundancy — if the primary fails, the replica can be promoted.
+
+    Code Base (shared between servers)
+
+        The same application code deployed on both web and application servers to ensure consistent behavior.
+
+3. Architecture Flow
+
+User Browser
+     |
+   Internet
+     |
+ [DNS: www.foobar.com → Load Balancer IP]
+     |
+ Load Balancer (HAProxy)
+  - Distribution: Round Robin
+  - Active-Active setup
+     /           \
+    /             \
+ Web+App Server 1   Web+App Server 2
+ (Nginx + App)       (Nginx + App)
+     |                   |
+     └─────────────┬─────┘
+                   |
+          MySQL Database Cluster
+         ┌───────────────────────┐
+         │ Primary (writes + reads) │
+         │ Replica (reads only)     │
+         └───────────────────────┘
+
+4. Load Balancer Configuration
+
+    Algorithm: Round Robin
+
+        Sends each incoming request to the next server in sequence.
+
+        Example: Request 1 → Server 1, Request 2 → Server 2, Request 3 → Server 1, etc.
+
+        Provides even distribution without considering server load.
+
+    Setup Type: Active–Active
+
+        Both backend servers handle traffic at the same time.
+
+        Difference from Active–Passive:
+
+            Active–Active: All servers are in use simultaneously.
+
+            Active–Passive: Only one server is active; the other remains idle until the active one fails.
+
+5. Database Primary–Replica (Master–Slave) Cluster
+
+    How it works
+
+        Primary Node: Handles all write operations (INSERT, UPDATE, DELETE) and can also serve reads.
+
+        Replica Node: Continuously synchronizes data from the primary (usually via asynchronous replication) and handles read queries only.
+
+        Improves read scalability by offloading read traffic to the replica.
+
+    Difference in Application Perspective
+
+        Writes → Always sent to the Primary node.
+
+        Reads → Can be directed to the Replica node to reduce load on the Primary.
+
+6. Issues with This Setup
+
+    Single Points of Failure (SPOF)
+
+        If the load balancer fails, the entire system becomes unreachable (no redundancy for LB).
+
+        If the database primary fails and there’s no automated failover, writes will fail.
+
+    Security Issues
+
+        No firewall — servers are directly exposed to the internet, increasing attack surface.
+
+        No HTTPS — data is transmitted unencrypted, vulnerable to eavesdropping and MITM attacks.
+
+    No Monitoring
+
+        Without monitoring tools, you can’t detect failures, slow queries, or high load before users are affected.
